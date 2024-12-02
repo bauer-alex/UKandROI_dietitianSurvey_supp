@@ -1,0 +1,641 @@
+---
+title: "Description"
+author: "Dr. Alexander Bauer"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    self-contained: true
+    code-fold: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load packages}
+#| message: false
+
+library(readxl)     # read xlsx data
+library(dplyr)      # data handling
+library(tidyr)      # data transformation
+library(ggplot2)    # data visualization
+library(patchwork)  # join ggplot graphics
+library(kableExtra) # print tables
+
+# set global ggplot theme
+theme_set(
+  theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+)
+```
+
+# Data preparation
+
+```{r}
+# read data
+dat <- read_excel("../data/Plant-Based Survey - Registered Dietitians_V1.0 .xlsx",
+                  sheet = "Combined", skip = 2, n_max = 335)
+
+# read lookup table from the first two rows in the Excel file
+dat_lookup <- read_excel("../data/Plant-Based Survey - Registered Dietitians_V1.0 .xlsx",
+                         sheet = "Combined", n_max = 2)
+```
+
+```{r}
+### properly format the lookup dataset
+dat_lookup <- dat_lookup %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rename(group = V1,
+         label = V2) %>% 
+  mutate(variable = row.names(.)) %>% 
+  select(group, variable, label)
+row.names(dat_lookup) <- NULL
+
+
+### format the main dataset
+# use the short variable labels for the main dataset
+colnames(dat) <- dat_lookup$variable
+
+# properly encode variables
+dat <- dat %>% 
+  mutate(cohort               = factor(cohort),
+         survey_consent       = factor(survey_consent),
+         registered_dietitian = factor(registered_dietitian),
+         gender               = factor(gender, levels = c("Male", "Female")),
+         education            = case_when(education == "student"              ~ NA_character_, # unsure about this person
+                                          grepl("post", tolower(education))   ~ "Postgraduate degree",
+                                          education == "higher diploma"       ~ "Postgraduate degree",
+                                          grepl("master", tolower(education)) ~ "Postgraduate degree",
+                                          TRUE                                ~ education),
+         education            = factor(education, levels = c("Undergraduate degree", "Postgraduate degree", "PhD")),
+         dietetics_country    = case_when(tolower(dietetics_country) == "ireland" ~ "Ireland",
+                                          TRUE                                    ~ "UK"),
+         dietetics_country    = factor(dietetics_country),
+         dieteticsArea_academia        = grepl("Academia", dietetics_area) %>%         factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_catering        = grepl("Catering", dietetics_area) %>%         factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_community       = grepl("Community", dietetics_area) %>%        factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_hospital        = grepl("Hospital", dietetics_area) %>%         factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_industry        = grepl("Industry", dietetics_area) %>%         factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_primaryCare     = grepl("Primary care", dietetics_area) %>%     factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_privatePractice = grepl("Private practice", dietetics_area) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_publicHealth    = grepl("Public health", dietetics_area) %>%    factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsArea_research        = grepl("Research", dietetics_area) %>%         factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_cardiothoracic   = grepl("Cardiothoracic",          dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_elderly          = grepl("Care for the elderly",    dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_diabetes         = grepl("Diabetes",                dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_gastroenterology = grepl("Gastroenterology",        dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_ICU              = grepl("Intensive care unit",     dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_ltCareFacility   = grepl("Long-term care facility", dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_maternity        = grepl("Maternity",               dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_nutritionSupport = (grepl("nutrition support",       tolower(dietetics_subspecialty)) |
+                                                     grepl("enteral",               tolower(dietetics_subspecialty))) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_obesity          = grepl("Obesity",                 dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_oncology         = grepl("Oncology",                dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_paediatrics      = grepl("Paediatrics",              dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_psychEating      = grepl("Psychiatry/eating disorders", dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_renal            = grepl("Renal",             dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_sportsNutrition  = grepl("Sports nutrition",  dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_transplantation  = grepl("Transplantation",   dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_weightManagement = grepl("Weight management", dietetics_subspecialty) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_neurology        = grepl("neuro",             tolower(dietetics_subspecialty)) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         dieteticsSubspecialty_obesityOrWeightManagement = case_when(dieteticsSubspecialty_obesity == "yes"          ~ "yes",
+                                                                     dieteticsSubspecialty_weightManagement == "yes" ~ "yes",
+                                                                     TRUE                                            ~ "no"),
+         dieteticsSubspecialty_obesityOrWeightManagement = factor(dieteticsSubspecialty_obesityOrWeightManagement,
+                                                                  levels = c("no", "yes")),
+         diet_personal                       = tolower(diet_personal),
+         diet_personal                       = case_when(grepl("wfpb", diet_personal)       ~ "WFPB",
+                                                         grepl("omnivore", diet_personal)   ~ "Omnivore",
+                                                         grepl("flex", diet_personal)       ~ "Flexitarian",
+                                                         grepl("pesc", diet_personal)       ~ "Pescetarian",
+                                                         grepl("mediterr", diet_personal)   ~ "Mediterranean",
+                                                         grepl("vegetarian", diet_personal) ~ "Vegetarian",
+                                                         grepl("vegan", diet_personal)      ~ "Vegan",
+                                                         grepl("plant", diet_personal)      ~ "Vegan",
+                                                         TRUE                               ~ "Omnivore"),
+         diet_personal                       = factor(diet_personal, levels = c("Omnivore", "Mediterranean", "Flexitarian", "Pescetarian", "Vegetarian", "Vegan", "WFPB")),
+         diet_perceptionPBdiet_DASH          = grepl("DASH diet",  diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_vegan         = grepl("Vegan diet", diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_vegetarian    = grepl("Vegetarian diet",    diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_flexitarian   = grepl("Flexitarian diet",   diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_meditteranean = grepl("Mediterranean diet", diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_MIND          = grepl("MIND diet",      diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_portfolio     = grepl("Portfolio diet", diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_WFPB          = grepl("Whole food plant-based diet", diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_perceptionPBdiet_Planet        = grepl("Eat Lancet Planetary Health diet", diet_perceptionPBdiet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         across(starts_with("wpWFPB"), function(x) { factor(x, levels = c("No, strongly disagree", "No, disagree", "Not sure", "Yes, agree", "Yes, strongly agree")) }),
+         plantProtein_isIncomplete = factor(plantProtein_isIncomplete, levels = c("No, strongly disagree", "No, disagree", "Not sure", "Yes, agree", "Yes, strongly agree")),
+         WFPB_micronutrientsOfConcern_calcium   = grepl("Calcium", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_choline   = grepl("Choline", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_folate    = grepl("Folate", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_iodine    = grepl("Iodine", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_iron      = grepl("Iron", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_LComega3  = grepl("Long-chain omega-3", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_potassium = grepl("Potassium", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_selenium  = grepl("Selenium", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_SComega3  = grepl("Short chain omega-3", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_vitB12    = grepl("Vitamin B12", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_vitD      = grepl("Vitamin D", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_thiamine  = grepl("Thiamine", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_micronutrientsOfConcern_zinc      = grepl("Zinc", WFPB_micronutrientsOfConcern) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_alzheimer        = grepl("Alzheimer", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_heartDisease     = grepl("Heart disease", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_highCholesterol  = grepl("High cholesterol", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_hypertension     = grepl("Hypertension", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_T2Diabetes       = grepl("Type 2 Diabetes", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_obesity          = grepl("Obesity", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_stroke           = grepl("Stroke", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_chronicKidney    = grepl("Chronic kidney", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_certainCancers   = grepl("Certain cancers", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_IBD              = grepl("Inflammatory bowel", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_IBS              = grepl("Irritable bowel", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_fattyLiver       = grepl("Fatty liver", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_vascularDementia = grepl("Vascular", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_improvedConditions_depression       = grepl("Depression", Pbdiet_improvedConditions) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         diet_personallyTriedWFPB = factor(diet_personallyTriedWFPB, levels = c("No;", "Yes;"), labels = c("no", "yes")),
+         diet_personallyTriedWFPB_yes_eliminatedDairy   = case_when(diet_personallyTriedWFPB == "no" ~ NA_character_,
+                                                                        TRUE ~ grepl("Dairy", diet_personallyTriedWFPB_yes_eliminatedFoods) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_yes_eliminatedEggs    = case_when(diet_personallyTriedWFPB == "no" ~ NA_character_,
+                                                                        TRUE ~ grepl("Eggs", diet_personallyTriedWFPB_yes_eliminatedFoods) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_yes_eliminatedFish    = case_when(diet_personallyTriedWFPB == "no" ~ NA_character_,
+                                                                        TRUE ~ grepl("Fish", diet_personallyTriedWFPB_yes_eliminatedFoods) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_yes_eliminatedHoney   = case_when(diet_personallyTriedWFPB == "no" ~ NA_character_,
+                                                                        TRUE ~ grepl("Honey", diet_personallyTriedWFPB_yes_eliminatedFoods) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_yes_eliminatedPoultry = case_when(diet_personallyTriedWFPB == "no" ~ NA_character_,
+                                                                        TRUE ~ grepl("Poultry", diet_personallyTriedWFPB_yes_eliminatedFoods) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_yes_eliminatedRedMeat = case_when(diet_personallyTriedWFPB == "no" ~ NA_character_,
+                                                                        TRUE ~ grepl("Red meat", diet_personallyTriedWFPB_yes_eliminatedFoods) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_yes_eliminatedNothing = case_when(diet_personallyTriedWFPB == "no" ~ NA_character_,
+                                                                        TRUE ~ grepl("Not applicable", diet_personallyTriedWFPB_yes_eliminatedFoods) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersPBdiet         = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("plant-based diet", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersHealthy        = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("healthy", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersProtein        = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("protein", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersDairy          = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("dairy", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersEggs           = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("eggs", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersCost           = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("cost", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersMicronutrients = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("micronutrient", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersCultural       = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("cultural", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         diet_personallyTriedWFPB_no_barriersNothing        = case_when(diet_personallyTriedWFPB == "yes" ~ NA_character_,
+                                                                        TRUE ~ grepl("Not applicable", diet_personallyTriedWFPB_no_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes"))),
+         WFPB_isSustainableLongTerm  = factor(WFPB_isSustainableLongTerm, levels = c("Strongly disagree", "Disagree", "Not sure", "Agree", "Strongly agree")),
+         WFPBrecommendation_howOften = factor(WFPBrecommendation_howOften, levels = c("Not applicable", "Never", "Rarely", "Sometimes", "Often", "Always")),
+         patientsGoWFPB_barriersInterest    = grepl("interest", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersDifficulty  = grepl("difficulty", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersBeliefs     = grepl("beliefs", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersProtein     = grepl("protein", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersFoodGroups  = grepl("food groups", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersCost        = grepl("cost", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersKnowledge   = grepl("knowledge", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersFoodOptions = grepl("Food options", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersMealPrep    = grepl("Preparing meals", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersEthnic      = grepl("ethnic", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         patientsGoWFPB_barriersNothing     = grepl("Not applicable", patientsGoWFPB_barriers) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         education_WFPBeducation     = factor(education_WFPBeducation, levels = c("Did not receive any training or resources on this topic", "Very poor", "Poor", "Good", "Very good", "Excellent")),
+         WFPBcounselling_confidence  = factor(WFPBcounselling_confidence, levels = c("Not applicable", "Not confident", "Slightly confident", "Somewhat confident",
+                                                                                     "Confident as I have done it personally, not because of my training", "Fairly confident", "Completely confident")),
+         T2Diab_dietNational    = grepl("National", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietLowCarbs    = grepl("Low carbohydrate", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietKeto        = grepl("Ketogenic", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietMedit       = grepl("Mediterranean", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietDASH        = grepl("DASH", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietVegetarian  = grepl("Vegetarian", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietVegan       = grepl("Vegan", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietWFPB        = grepl("Whole food plant-based", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietHighProtein = grepl("High protein", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietTDR         = grepl("TDR", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietPDR         = grepl("PDR", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietLowEnergy   = grepl("Low energy", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietLowFat      = grepl("Low fat", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         T2Diab_dietNA          = grepl("Not applicable", T2Diab_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietNational    = grepl("National", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietLowCarbs    = grepl("Low carbohydrate", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietKeto        = grepl("Ketogenic", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietMedit       = grepl("Mediterranean", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietDASH        = grepl("DASH", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietHEART       = grepl("HEART", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietVegetarian  = grepl("Vegetarian", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietVegan       = grepl("Vegan", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietWFPB        = grepl("Whole food plant-based", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietHighProtein = grepl("High protein", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietTDR         = grepl("TDR", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietPDR         = grepl("PDR", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietLowEnergy   = grepl("Low energy", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietLowFat      = grepl("Low fat", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cardiovascDisease_dietNA          = grepl("Not applicable", cardiovascDisease_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietNational    = grepl("National", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietLowCarbs    = grepl("Low carbohydrate", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietKeto        = grepl("Ketogenic", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietMedit       = grepl("Mediterranean", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietDASH        = grepl("DASH", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietVegetarian  = grepl("Vegetarian", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietVegan       = grepl("Vegan", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietWFPB        = grepl("Whole food plant-based", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietHighProtein = grepl("High protein", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietTDR         = grepl("TDR", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietPDR         = grepl("PDR", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietLowEnergy   = grepl("Low energy", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietLowFat      = grepl("Low fat", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietPortfolio   = grepl("Portfolio", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         weightLoss_dietNA          = grepl("Not applicable", weightLoss_diet) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesNDG      = grepl("National Dietary Guidelines", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesWCRF     = grepl("WCRF", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesWHO      = grepl("WHO", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesAmerican = grepl("American", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesESPEN    = grepl("ESPEN", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesCancerUK = grepl("Cancer Research UK", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesIrish    = grepl("Irish", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesCanadian = grepl("Canadian", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesNCI      = grepl("National Cancer Institute", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         cancerPrev_guidelinesNA       = grepl("Not applicable", cancerPrev_dietaryGuidelines) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         WFPB_financiallyRealistic_forLowIncome  = factor(WFPB_financiallyRealistic_forLowIncome, levels = c("Strongly disagree", "Disagree", "Not sure", "Agree", "Strongly agree")),
+         Pbdiet_enoughProperEducationalResources = case_when(Pbdiet_enoughProperEducationalResources == "Could be better but there are some" ~ "Agree",
+                                                             Pbdiet_enoughProperEducationalResources == "Feel more  + more are becoming available e.g. RNG plant based" ~ "Agree",
+                                                             Pbdiet_enoughProperEducationalResources == "More UK based than Irish"           ~ "Not sure",
+                                                             TRUE ~ Pbdiet_enoughProperEducationalResources),
+         Pbdiet_enoughProperEducationalResources = factor(Pbdiet_enoughProperEducationalResources, levels = c("Strongly disagree", "Disagree", "Not sure", "Agree", "Strongly agree")),
+         withinHealthcare_PbdietShouldBeOption   = case_when(grepl("agree", tolower(withinHealthcare_PbdietShouldBeOption))    ~ withinHealthcare_PbdietShouldBeOption,
+                                                             grepl("expensive", withinHealthcare_PbdietShouldBeOption)         ~ "Disagree",
+                                                             grepl("IF the patient", withinHealthcare_PbdietShouldBeOption)    ~ "Agree",
+                                                             withinHealthcare_PbdietShouldBeOption == "it should be an option" ~ "Agree",
+                                                             grepl("ADDITIONAL option", withinHealthcare_PbdietShouldBeOption) ~ "Agree",
+                                                             grepl("Provision should", withinHealthcare_PbdietShouldBeOption)  ~ "Agree",
+                                                             TRUE ~ "Not sure"),
+         withinHealthcare_PbdietShouldBeOption   = factor(withinHealthcare_PbdietShouldBeOption, levels = c("Strongly disagree", "Disagree", "Not sure", "Agree", "Strongly agree")),
+         workplace_supportForWFPBadvocacy = factor(workplace_supportForWFPBadvocacy, levels = c("Strongly unsupported", "Somewhat unsupported", "Neutral", "Somewhat supported", "Strongly supported")),
+         Pbdiet_increasedRiskForMalnutrition = factor(Pbdiet_increasedRiskForMalnutrition, levels = c("Strongly disagree", "Disagree", "Not sure", "Agree", "Strongly agree")),
+         Pbdiet_increasedRiskEatingDisorder = case_when(grepl("agree", tolower(Pbdiet_increasedRiskEatingDisorder))       ~ Pbdiet_increasedRiskEatingDisorder,
+                                                        grepl("often connected", Pbdiet_increasedRiskEatingDisorder)      ~ "Disagree",
+                                                        Pbdiet_increasedRiskEatingDisorder == "Some degree"               ~ "Agree",
+                                                        grepl("Not causal", Pbdiet_increasedRiskEatingDisorder)           ~ "Disagree",
+                                                        grepl("causal factor", Pbdiet_increasedRiskEatingDisorder)        ~ "Disagree",
+                                                        grepl("No ", Pbdiet_increasedRiskEatingDisorder)                  ~ "Disagree",
+                                                        grepl("A restrictive", Pbdiet_increasedRiskEatingDisorder)        ~ "Agree",
+                                                        grepl("further developing", Pbdiet_increasedRiskEatingDisorder)   ~ "Disagree",
+                                                        grepl("Doesn't increase", Pbdiet_increasedRiskEatingDisorder)     ~ "Disagree",
+                                                        grepl("The dietary approach", Pbdiet_increasedRiskEatingDisorder) ~ "Disagree",
+                                                        grepl("The diet itself", Pbdiet_increasedRiskEatingDisorder)      ~ "Disagree",
+                                                        grepl("It does not", Pbdiet_increasedRiskEatingDisorder)          ~ "Disagree",
+                                                        grepl("It is probably", Pbdiet_increasedRiskEatingDisorder)       ~ "Disagree",
+                                                        grepl("People with food", Pbdiet_increasedRiskEatingDisorder)     ~ "Disagree",
+                                                        grepl("It can be associated", Pbdiet_increasedRiskEatingDisorder) ~ "Disagree",
+                                                        grepl("may be an indicator", Pbdiet_increasedRiskEatingDisorder)  ~ "Disagree",
+                                                        grepl("I don't think it", Pbdiet_increasedRiskEatingDisorder)     ~ "Disagree",
+                                                        grepl("it doesn't cause", Pbdiet_increasedRiskEatingDisorder)     ~ "Disagree",
+                                                        grepl("It's not a direct", Pbdiet_increasedRiskEatingDisorder)    ~ "Disagree",
+                                                        grepl("Can be used as", Pbdiet_increasedRiskEatingDisorder)       ~ "Disagree",
+                                                        grepl("I know there is an", Pbdiet_increasedRiskEatingDisorder)   ~ "Disagree",
+                                                        TRUE ~ "Not sure"),
+         Pbdiet_increasedRiskEatingDisorder = factor(Pbdiet_increasedRiskEatingDisorder, levels = c("Strongly disagree", "Disagree", "Not sure", "Agree", "Strongly agree")),
+         Pbdiet_primaryMotivationClientsWeightLoss            = grepl("Weight loss", Pbdiet_primaryMotivationClients) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_primaryMotivationClientsCardiometabolicHealth = grepl("Cardiometabolic health", Pbdiet_primaryMotivationClients) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_primaryMotivationClientsOverallHealth         = grepl("overall health", Pbdiet_primaryMotivationClients) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_primaryMotivationClientsGlycaemicIndex        = grepl("glycaemic", Pbdiet_primaryMotivationClients) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_primaryMotivationClientsEnvironmental         = grepl("Environmental", Pbdiet_primaryMotivationClients) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_primaryMotivationClientsEthics                = grepl("Ethics", Pbdiet_primaryMotivationClients) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         Pbdiet_primaryMotivationClientsNothing               = grepl("Not applicable", Pbdiet_primaryMotivationClients) %>% factor(levels = c(FALSE, TRUE), labels = c("no", "yes")),
+         ChronicConditions_longTermWFPBadherence   = case_when(grepl("agree", tolower(ChronicConditions_longTermWFPBadherence))      ~ withinHealthcare_PbdietShouldBeOption,
+                                                              grepl("support", ChronicConditions_longTermWFPBadherence)             ~ "Agree",
+                                                              grepl("If their motivation", ChronicConditions_longTermWFPBadherence) ~ "Agree",
+                                                              grepl("Only if it was", ChronicConditions_longTermWFPBadherence)      ~ "Agree",
+                                                              grepl("Not likely if", ChronicConditions_longTermWFPBadherence)       ~ "Agree",
+                                                              grepl("Not appropriate", ChronicConditions_longTermWFPBadherence)     ~ "Disagree",
+                                                              TRUE ~ "Not sure"),
+         ChronicConditions_longTermWFPBadherence = factor(ChronicConditions_longTermWFPBadherence, levels = c("Strongly disagree", "Disagree", "Not sure", "Agree", "Strongly agree"))
+         )
+
+```
+
+
+# Description
+
+## Sociodemography
+
+```{r}
+# gender
+ggplot(dat, aes(x = "", fill = gender)) + geom_bar(position = "fill")
+
+# age
+ggplot(dat, aes(x = "", y = age)) + geom_boxplot()
+
+# education
+ggplot(dat, aes(x = "", fill = education)) + geom_bar(position = "fill")
+
+# years of practics
+ggplot(dat, aes(x = "", y = dietitian_forHowLong)) + geom_boxplot()
+```
+
+## Knowledge
+
+```{r}
+vars_kn <- dat_lookup %>% filter(group == "knowledge") %>% pull(variable)
+
+# part 1 Likert-scale items
+dat %>% 
+  select(all_of(vars_kn)) %>% 
+  select(-diet_perceptionPBdiet,
+         -WFPB_micronutrientsOfConcern, -Pbdiet_improvedConditions,
+         -Pbdiet_increasedRiskForMalnutrition, -Pbdiet_increasedRiskEatingDisorder) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# part 2 Likert-scale items
+dat %>% 
+  select(Pbdiet_increasedRiskForMalnutrition, Pbdiet_increasedRiskEatingDisorder) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# perception plant-based diet
+dat %>% 
+  select(starts_with("diet_perceptionPBdiet_")) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "diet_perceptionPBdiet_", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Perception of what is a plant-based diet") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# micronutrients of concern
+dat %>% 
+  select(starts_with("WFPB_micronutrientsOfConcern_")) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "WFPB_micronutrientsOfConcern_", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Micronutrients of concern") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# improved conditions
+dat %>% 
+  select(starts_with("Pbdiet_improvedConditions_")) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "Pbdiet_improvedConditions_", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Improved conditions through plant-based diet") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+```
+
+## Beliefs / Attitudes
+
+```{r}
+vars_bl <- dat_lookup %>% filter(grepl("beliefs", group)) %>% pull(variable)
+
+# all Likert-scale items
+dat %>% 
+  select(all_of(vars_bl)) %>% 
+  select(-WFPBrecommendation_howOften, -T2Diab_diet,
+         -cardiovascDisease_diet, -weightLoss_diet,
+         -cancerPrev_dietaryGuidelines) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# WFPBrecommendation_howOften
+dat %>% 
+  select(WFPBrecommendation_howOften) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# T2Diab_diet
+gg1 <- dat %>% 
+  select(starts_with("T2Diab_diet")) %>% 
+  select(-T2Diab_diet) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "T2Diab_diet", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Recommended diet\nfor type-2 diabetes") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# cardiovascDisease_diet
+gg2 <- dat %>% 
+  select(starts_with("cardiovascDisease_diet")) %>% 
+  select(-cardiovascDisease_diet) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "cardiovascDisease_diet", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Recommended diet\nfor cardiovascular disease") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# weightLoss_diet
+gg3 <- dat %>% 
+  select(starts_with("weightLoss_diet")) %>% 
+  select(-weightLoss_diet) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "weightLoss_diet", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Recommended diet\nfor weight loss") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# joint graphic
+(gg1 + gg2 + gg3) + patchwork::plot_layout(guides = "collect")
+
+# cancerPrev_dietaryGuidelines
+dat %>% 
+  select(starts_with("cancerPrev_guidelines")) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "cancerPrev_guidelines", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Dietary guidelines for cancer prevention") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+```
+
+## Barriers
+
+```{r}
+vars_br <- dat_lookup %>% filter(group == "barriers") %>% pull(variable)
+
+# diet_personallyTriedWFPB_no_barriers
+dat %>% 
+  filter(diet_personallyTriedWFPB == "no") %>% 
+  select(starts_with("diet_personallyTriedWFPB_no_barriers")) %>% 
+  select(-diet_personallyTriedWFPB_no_barriers) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "diet_personallyTriedWFPB_no_barriers", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Barriers - did not personally try WFPB") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# patientsGoWFPB_barriers
+dat %>% 
+  select(starts_with("patientsGoWFPB_barriers")) %>% 
+  select(-patientsGoWFPB_barriers) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "patientsGoWFPB_barriers", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Barriers for patients that go WFPB") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# education_WFPBeducation
+dat %>% 
+  select(education_WFPBeducation) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "bottom")
+
+# WFPBcounselling_confidence
+dat %>% 
+  select(WFPBcounselling_confidence) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "bottom")
+
+# workplace_supportForWFPBadvocacy
+dat %>% 
+  select(workplace_supportForWFPBadvocacy) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "bottom")
+
+# Pbdiet_primaryMotivationClients
+dat %>% 
+  select(starts_with("Pbdiet_primaryMotivationClients")) %>% 
+  select(-Pbdiet_primaryMotivationClients) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(sum_yes = sum(value == "yes")) %>% 
+  ungroup() %>% 
+  arrange(desc(sum_yes)) %>% 
+  mutate(name = gsub(pattern = "Pbdiet_primaryMotivationClients", replacement = "", name),
+         name = factor(name, levels = rev(unique(name)))) %>% 
+  ggplot(aes(y = name, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("lightgray", "dodgerblue3")) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  xlab("Agreement [%]") +
+  ggtitle("Clients' primary motivation for plant-based diet") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank())
+
+# ChronicConditions_longTermWFPBadherence
+dat %>% 
+  select(ChronicConditions_longTermWFPBadherence) %>% 
+  pivot_longer(cols = everything(), names_to = "item") %>% 
+  ggplot(aes(y = item, fill = value)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(type = "div") +
+  theme(axis.title.y = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "bottom")
+```
